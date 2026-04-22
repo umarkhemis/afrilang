@@ -1,176 +1,218 @@
 """
-Static in-memory model registry.
+AfriLang – Model Registry.
 
-Each entry describes a translation model for a specific language pair.
-Fields:
-  - source_lang:    BCP-47 / ISO-639-1 source language code
-  - target_lang:    BCP-47 / ISO-639-1 target language code
-  - provider:       "huggingface" | "sunbird"
-  - model_id:       provider-specific model identifier or HF repo id
-  - endpoint:       full inference URL (None = use provider default)
-  - quality_score:  float 0-1 (higher = better); used by router to pick best model
+Each ModelEntry describes one translation model available for a specific
+(source_lang, target_lang) pair.  The router picks the entry with the highest
+`quality_score` for a given pair; if no dedicated model exists it falls back
+to the NLLB-200 catch-all.
+
+Provider IDs map to concrete adapter classes in app/services/providers/.
 """
+from __future__ import annotations
 
-from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
+
+# ── Language metadata ────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class LanguageInfo:
+    code: str           # BCP-47-ish code used by AfriLang
+    name: str           # Human-readable English name
+    native_name: str    # Name in the language itself
+    region: str         # continent sub-region
+    family: str         # linguistic family
+    sunbird_code: Optional[str] = None   # Sunbird's internal code (if different)
+    nllb_code: Optional[str] = None      # NLLB-200 flores200 code
+
+
+LANGUAGE_REGISTRY: Dict[str, LanguageInfo] = {
+    # ── West African ─────────────────────────────────────────────────────────
+    "yo": LanguageInfo("yo",  "Yoruba",   "Yorùbá",     "West Africa",    "Niger-Congo",   nllb_code="yor_Latn"),
+    "ha": LanguageInfo("ha",  "Hausa",    "Hausa",      "West Africa",    "Afro-Asiatic",  nllb_code="hau_Latn"),
+    "ig": LanguageInfo("ig",  "Igbo",     "Igbo",       "West Africa",    "Niger-Congo",   nllb_code="ibo_Latn"),
+    "tw": LanguageInfo("tw",  "Twi",      "Twi",        "West Africa",    "Niger-Congo",   nllb_code="twi_Latn"),
+    "wo": LanguageInfo("wo",  "Wolof",    "Wolof",      "West Africa",    "Niger-Congo",   nllb_code="wol_Latn"),
+    "ff": LanguageInfo("ff",  "Fula",     "Fulfulde",   "West Africa",    "Niger-Congo",   nllb_code="fuv_Latn"),
+    # ── East African ─────────────────────────────────────────────────────────
+    "sw": LanguageInfo("sw",  "Swahili",  "Kiswahili",  "East Africa",    "Niger-Congo",   sunbird_code="swa", nllb_code="swh_Latn"),
+    "am": LanguageInfo("am",  "Amharic",  "አማርኛ",       "East Africa",    "Afro-Asiatic",  nllb_code="amh_Ethi"),
+    "om": LanguageInfo("om",  "Oromo",    "Oromoo",     "East Africa",    "Afro-Asiatic",  nllb_code="gaz_Latn"),
+    "so": LanguageInfo("so",  "Somali",   "Soomaali",   "East Africa",    "Afro-Asiatic",  nllb_code="som_Latn"),
+    "rw": LanguageInfo("rw",  "Kinyarwanda","Ikinyarwanda","East Africa", "Niger-Congo",   sunbird_code="kin", nllb_code="kin_Latn"),
+    # ── Ugandan languages (Sunbird-primary) ──────────────────────────────────
+    "lug": LanguageInfo("lug","Luganda",  "Oluganda",   "East Africa",    "Niger-Congo",   sunbird_code="lug", nllb_code="lug_Latn"),
+    "nyn": LanguageInfo("nyn","Runyankole","Runyankore", "East Africa",    "Niger-Congo",   sunbird_code="nyn", nllb_code="nyn_Latn"),
+    "lgg": LanguageInfo("lgg","Lugbara",  "Lugbara",    "East Africa",    "Central Sudanic",sunbird_code="lgg"),
+    "ach": LanguageInfo("ach","Acholi",   "Acholi",     "East Africa",    "Nilotic",        sunbird_code="ach"),
+    "teo": LanguageInfo("teo","Ateso",    "Ateso",      "East Africa",    "Nilotic",        sunbird_code="teo"),
+    "luo": LanguageInfo("luo","Luo",      "Dholuo",     "East Africa",    "Nilotic",        nllb_code="luo_Latn"),
+    "xog": LanguageInfo("xog","Lusoga",   "Olusoga",    "East Africa",    "Niger-Congo",    sunbird_code="xog"),
+    "myx": LanguageInfo("myx","Lumasaba", "Lumasaaba",  "East Africa",    "Niger-Congo",    sunbird_code="myx"),
+    "laj": LanguageInfo("laj","Lango",    "Lango",      "East Africa",    "Nilotic",        sunbird_code="laj"),
+    "adh": LanguageInfo("adh","Jopadhola","Dhopadhola", "East Africa",    "Nilotic",        sunbird_code="adh"),
+    # ── Southern African ─────────────────────────────────────────────────────
+    "zu": LanguageInfo("zu",  "Zulu",     "IsiZulu",    "Southern Africa","Niger-Congo",    nllb_code="zul_Latn"),
+    "xh": LanguageInfo("xh",  "Xhosa",   "IsiXhosa",   "Southern Africa","Niger-Congo",    nllb_code="xho_Latn"),
+    "af": LanguageInfo("af",  "Afrikaans","Afrikaans",  "Southern Africa","Indo-European",  nllb_code="afr_Latn"),
+    "sn": LanguageInfo("sn",  "Shona",   "ChiShona",   "Southern Africa","Niger-Congo",    nllb_code="sna_Latn"),
+    "st": LanguageInfo("st",  "Sotho",   "Sesotho",    "Southern Africa","Niger-Congo",    nllb_code="sot_Latn"),
+    "tn": LanguageInfo("tn",  "Tswana",  "Setswana",   "Southern Africa","Niger-Congo",    nllb_code="tsn_Latn"),
+    # ── North African ────────────────────────────────────────────────────────
+    "ar": LanguageInfo("ar",  "Arabic",  "العربية",    "North Africa",   "Afro-Asiatic",   nllb_code="arb_Arab"),
+    "ber": LanguageInfo("ber","Tamazight","ⵜⴰⵎⴰⵣⵉⵖⵜ",  "North Africa",  "Afro-Asiatic",   nllb_code="tzm_Tfng"),
+    # ── Source/pivot ─────────────────────────────────────────────────────────
+    "en":  LanguageInfo("en", "English", "English",    "Global",         "Indo-European",  sunbird_code="eng", nllb_code="eng_Latn"),
+    "fr":  LanguageInfo("fr", "French",  "Français",   "Global",         "Indo-European",  nllb_code="fra_Latn"),
+    "pt":  LanguageInfo("pt", "Portuguese","Português", "Global",        "Indo-European",  nllb_code="por_Latn"),
+}
+
+
+# ── Model entries ────────────────────────────────────────────────────────────
 
 @dataclass
 class ModelEntry:
-    source_lang: str
-    target_lang: str
-    provider: str
     model_id: str
-    endpoint: Optional[str]
-    quality_score: float
+    provider: str            # "sunbird" | "huggingface" | "nllb"
+    source_langs: List[str]
+    target_langs: List[str]
+    quality_score: float     # 0.0 – 1.0  (BLEU-normalised estimate)
+    avg_latency_ms: int      # rough p50 latency
+    supports_batch: bool = True
+    notes: str = ""
 
 
-# ---------------------------------------------------------------------------
-# Registry: list of known models for MVP language pairs
-# ---------------------------------------------------------------------------
-MODEL_REGISTRY: list[ModelEntry] = [
-    # --- Swahili ---
+# Registry: all known dedicated models.
+# The router iterates this list and picks the highest quality_score for a pair.
+MODEL_REGISTRY: List[ModelEntry] = [
+
+    # ── Sunbird – Ugandan-language expert ────────────────────────────────────
     ModelEntry(
-        source_lang="en",
-        target_lang="sw",
-        provider="huggingface",
+        model_id="sunbird/nllb_translate",
+        provider="sunbird",
+        source_langs=["en", "lug", "nyn", "lgg", "ach", "teo", "sw",
+                      "rw", "xog", "myx", "laj", "adh"],
+        target_langs=["en", "lug", "nyn", "lgg", "ach", "teo", "sw",
+                      "rw", "xog", "myx", "laj", "adh"],
+        quality_score=0.92,
+        avg_latency_ms=800,
+        notes="State-of-art for Ugandan languages; outperforms GPT-4 on 24/31 Ugandan langs",
+    ),
+
+    # ── Helsinki-NLP specialised models (via HuggingFace) ───────────────────
+    ModelEntry(
         model_id="Helsinki-NLP/opus-mt-en-sw",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-en-sw",
-        quality_score=0.82,
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["sw"],
+        quality_score=0.85,
+        avg_latency_ms=1200,
     ),
     ModelEntry(
-        source_lang="sw",
-        target_lang="en",
-        provider="huggingface",
         model_id="Helsinki-NLP/opus-mt-sw-en",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-sw-en",
-        quality_score=0.82,
-    ),
-    # --- Yoruba ---
-    ModelEntry(
-        source_lang="en",
-        target_lang="yo",
         provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-en-yo",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-en-yo",
-        quality_score=0.75,
-    ),
-    ModelEntry(
-        source_lang="yo",
-        target_lang="en",
-        provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-yo-en",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-yo-en",
-        quality_score=0.75,
-    ),
-    # --- Hausa ---
-    ModelEntry(
-        source_lang="en",
-        target_lang="ha",
-        provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-en-ha",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-en-ha",
-        quality_score=0.77,
-    ),
-    ModelEntry(
-        source_lang="ha",
-        target_lang="en",
-        provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-ha-en",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-ha-en",
-        quality_score=0.77,
-    ),
-    # --- Igbo ---
-    ModelEntry(
-        source_lang="en",
-        target_lang="ig",
-        provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-en-ig",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-en-ig",
-        quality_score=0.72,
-    ),
-    ModelEntry(
-        source_lang="ig",
-        target_lang="en",
-        provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-ig-en",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-ig-en",
-        quality_score=0.72,
-    ),
-    # --- Zulu ---
-    ModelEntry(
-        source_lang="en",
-        target_lang="zu",
-        provider="huggingface",
-        model_id="AfriScience-MT/nllb_200_distilled_600m-eng-zul",
-        endpoint="https://api-inference.huggingface.co/models/AfriScience-MT/nllb_200_distilled_600m-eng-zul",
-        quality_score=0.78,
-    ),
-    ModelEntry(
-        source_lang="zu",
-        target_lang="en",
-        provider="huggingface",
-        model_id="Helsinki-NLP/opus-mt-zu-en",
-        endpoint="https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-zu-en",
-        quality_score=0.74,
-    ),
-    # --- Ugandan languages via Sunbird Sunflower ---
-    # TODO: replace model_id and endpoint with real Sunbird values once API access is granted
-    ModelEntry(
-        source_lang="en",
-        target_lang="lg",
-        provider="sunbird",
-        model_id="sunbird-sunflower-lg",
-        endpoint=None,  # set via SUNBIRD_API_KEY / provider adapter
-        quality_score=0.85,
-    ),
-    ModelEntry(
-        source_lang="lg",
-        target_lang="en",
-        provider="sunbird",
-        model_id="sunbird-sunflower-lg",
-        endpoint=None,
-        quality_score=0.85,
-    ),
-    ModelEntry(
-        source_lang="en",
-        target_lang="nyn",
-        provider="sunbird",
-        model_id="sunbird-sunflower-nyn",
-        endpoint=None,
+        source_langs=["sw"],
+        target_langs=["en"],
         quality_score=0.83,
+        avg_latency_ms=1200,
     ),
     ModelEntry(
-        source_lang="en",
-        target_lang="luo",
-        provider="sunbird",
-        model_id="sunbird-sunflower-luo",
-        endpoint=None,
+        model_id="Helsinki-NLP/opus-mt-en-yo",
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["yo"],
+        quality_score=0.78,
+        avg_latency_ms=1300,
+    ),
+    ModelEntry(
+        model_id="Helsinki-NLP/opus-mt-en-ha",
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["ha"],
         quality_score=0.80,
+        avg_latency_ms=1300,
     ),
     ModelEntry(
-        source_lang="en",
-        target_lang="lgg",
-        provider="sunbird",
-        model_id="sunbird-sunflower-lgg",
-        endpoint=None,
-        quality_score=0.78,
+        model_id="Helsinki-NLP/opus-mt-en-ig",
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["ig"],
+        quality_score=0.75,
+        avg_latency_ms=1300,
     ),
     ModelEntry(
-        source_lang="en",
-        target_lang="teo",
-        provider="sunbird",
-        model_id="sunbird-sunflower-teo",
-        endpoint=None,
-        quality_score=0.78,
+        model_id="Helsinki-NLP/opus-mt-en-zu",
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["zu"],
+        quality_score=0.76,
+        avg_latency_ms=1300,
+    ),
+    ModelEntry(
+        model_id="Helsinki-NLP/opus-mt-en-rw",
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["rw"],
+        quality_score=0.77,
+        avg_latency_ms=1300,
+    ),
+
+    # ── NLLB-200 catch-all (lowest priority) ─────────────────────────────────
+    ModelEntry(
+        model_id="facebook/nllb-200-distilled-600M",
+        provider="huggingface",
+        source_langs=["*"],   # wildcard – handles any pair
+        target_langs=["*"],
+        quality_score=0.60,
+        avg_latency_ms=2000,
+        notes="Fallback: covers 200 languages including all African FLORES-200 codes",
     ),
 ]
 
 
-def get_models_for_pair(source_lang: str, target_lang: str) -> list[ModelEntry]:
-    """Return all registry entries matching the given language pair."""
-    return [
-        m
-        for m in MODEL_REGISTRY
-        if m.source_lang == source_lang and m.target_lang == target_lang
-    ]
+# ── Lookup helpers ───────────────────────────────────────────────────────────
+
+def get_best_model(source_lang: str, target_lang: str) -> ModelEntry:
+    """Return the highest-quality ModelEntry for a given language pair."""
+    candidates: List[ModelEntry] = []
+    for entry in MODEL_REGISTRY:
+        src_match = source_lang in entry.source_langs or "*" in entry.source_langs
+        tgt_match = target_lang in entry.target_langs or "*" in entry.target_langs
+        if src_match and tgt_match:
+            candidates.append(entry)
+
+    if not candidates:
+        # Should never happen – NLLB wildcard is always in the registry
+        raise ValueError(f"No model found for {source_lang} → {target_lang}")
+
+    return max(candidates, key=lambda e: e.quality_score)
+
+
+def get_language(code: str) -> Optional[LanguageInfo]:
+    return LANGUAGE_REGISTRY.get(code)
+
+
+def list_languages() -> List[LanguageInfo]:
+    return list(LANGUAGE_REGISTRY.values())
+
+
+# ── Build pair → model index for O(1) lookups ────────────────────────────────
+_PAIR_INDEX: Dict[Tuple[str, str], ModelEntry] = {}
+
+def _build_index() -> None:
+    codes = list(LANGUAGE_REGISTRY.keys())
+    for src in codes:
+        for tgt in codes:
+            if src != tgt:
+                _PAIR_INDEX[(src, tgt)] = get_best_model(src, tgt)
+
+_build_index()
+
+
+def get_model_fast(source_lang: str, target_lang: str) -> ModelEntry:
+    """O(1) version – falls back to linear search for unknown pairs."""
+    entry = _PAIR_INDEX.get((source_lang, target_lang))
+    if entry:
+        return entry
+    return get_best_model(source_lang, target_lang)
