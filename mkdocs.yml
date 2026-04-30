@@ -1,0 +1,202 @@
+# ============================================================
+# AfriLang Documentation
+# Built with MkDocs Material — same stack as FastAPI, Pydantic, LangChain
+#
+# Install:  pip install mkdocs-material mkdocstrings[python]
+# Serve:    mkdocs serve
+# Build:    mkdocs build
+# Deploy:   mkdocs gh-deploy   (publishes to GitHub Pages)
+# ============================================================
+
+site_name: AfriLang
+site_description: Unified translation and speech API for 30+ African languages
+site_url: https://docs.afrilang.betatechlabs.io
+site_author: Beta-Tech Labs
+copyright: Copyright &copy; 2026 Beta-Tech Labs
+
+repo_name: umarkhemis/afrilang
+repo_url: https://github.com/umarkhemis/afrilang
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+# ── Theme ──────────────────────────────────────────────────
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+  logo: assets/images/logo-mark.svg
+  favicon: assets/images/favicon.png
+
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - header.autohide
+    - announce.dismiss
+
+# ── Navigation ─────────────────────────────────────────────
+nav:
+  - Home: index.md
+
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Authentication: getting-started/authentication.md
+    - Supported Languages: getting-started/languages.md
+
+  - API Reference:
+    - api-reference/index.md
+    - Translation: api-reference/translation.md
+    - Batch Translation: api-reference/batch.md
+    - Speech to Text: api-reference/stt.md
+    - Text to Speech: api-reference/tts.md
+    - Languages: api-reference/languages.md
+    - Authentication: api-reference/auth.md
+    - Error Codes: api-reference/errors.md
+
+  - Python SDK:
+    - sdk-reference/index.md
+    - AfriLang Client: sdk-reference/client.md
+    - Translation: sdk-reference/translate.md
+    - Batch Translation: sdk-reference/batch.md
+    - Speech: sdk-reference/speech.md
+    - Data Types: sdk-reference/types.md
+    - Exceptions: sdk-reference/exceptions.md
+    - Async Usage: sdk-reference/async.md
+
+  - Guides:
+    - guides/index.md
+    - Building a Multilingual App: guides/multilingual-app.md
+    - Batch Processing at Scale: guides/batch-at-scale.md
+    - Speech Workflows: guides/speech-workflows.md
+    - Error Handling: guides/error-handling.md
+    - Rate Limits: guides/rate-limits.md
+    - Provider Routing: guides/provider-routing.md
+
+  - Examples:
+    - examples/index.md
+    - Translate a Document: examples/document-translation.md
+    - Build a Chatbot: examples/chatbot.md
+    - Transcribe Audio: examples/transcribe-audio.md
+    - Django Integration: examples/django.md
+    - FastAPI Integration: examples/fastapi.md
+
+  - Changelog: changelog.md
+  - Contributing: contributing.md
+
+# ── Plugins ────────────────────────────────────────────────
+plugins:
+  - search:
+      lang: en
+  - minify:
+      minify_html: true
+
+# ── Markdown extensions ────────────────────────────────────
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      title: On this page
+  - tables
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - docs/includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# ── Extra ──────────────────────────────────────────────────
+extra:
+  version:
+    provider: mike
+    default: stable
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/umarkhemis/afrilang
+      name: AfriLang on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/afrilang/
+      name: AfriLang on PyPI
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.com/company/betatechlabs
+      name: Beta-Tech Labs on LinkedIn
+    - icon: fontawesome/brands/x-twitter
+      link: https://twitter.com/betatechlabs
+      name: Beta-Tech Labs on X
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX    # replace with your GA4 ID
+  generator: false
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra_javascript:
+  - assets/javascripts/extra.js

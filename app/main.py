@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
+from app.api.debug import router as debug_router
 from app.api.languages import router as languages_router
 from app.api.speech import router as speech_router
 from app.api.translate import router as translate_router
@@ -39,14 +40,44 @@ async def lifespan(app: FastAPI):
     dev_key = get_dev_key()
     logger.info("=" * 60)
     logger.info("AfriLang API starting up")
-    logger.info("Docs:     %s/docs", settings.base_url)
-    logger.info("Dev key:  %s", dev_key)
-    logger.info("  └─ Use this key for local development.")
-    logger.info("  └─ Issue production keys via POST /api/v1/auth/keys")
-    if not settings.sunbird_api_key:
-        logger.warning("SUNBIRD_API_KEY not set – Sunbird provider in stub mode")
-    if not settings.huggingface_api_key:
-        logger.warning("HUGGINGFACE_API_KEY not set – HuggingFace provider in stub mode")
+    logger.info("Docs:    %s/docs", settings.base_url)
+    logger.info("Dev key: %s", dev_key)
+
+    # ── Provider diagnostics ──────────────────────────────────────────────────
+    hf_key = settings.huggingface_api_key
+    sb_key = settings.sunbird_api_key
+
+    if hf_key:
+        logger.info("HuggingFace: ✓ key set (%s...)", hf_key[:8])
+        logger.info("HuggingFace: base URL = %s", settings.huggingface_base_url)
+    else:
+        logger.warning(
+            "HuggingFace: ✗ HUGGINGFACE_API_KEY not set – running in stub mode.\n"
+            "  → Get a free token at: https://huggingface.co/settings/tokens"
+        )
+
+    if sb_key:
+        if sb_key.startswith("ey"):
+            logger.info("Sunbird: ✓ JWT token set (%s...)", sb_key[:12])
+        else:
+            logger.error(
+                "Sunbird: ✗ SUNBIRD_API_KEY is set but does NOT look like a JWT "
+                "(should start with 'ey...').\n"
+                "  → This will cause HTTP 405 errors.\n"
+                "  → Run: curl -X POST https://api.sunbird.ai/auth/token \\\n"
+                "           -H 'Content-Type: application/x-www-form-urlencoded' \\\n"
+                "           -d 'username=you@example.com&password=yourpassword'\n"
+                "  → Copy the access_token into SUNBIRD_API_KEY in your .env"
+            )
+    else:
+        logger.warning(
+            "Sunbird: ✗ SUNBIRD_API_KEY not set – running in stub mode.\n"
+            "  → To enable: register at https://api.sunbird.ai/auth/register\n"
+            "  → Then login: curl -X POST https://api.sunbird.ai/auth/token \\\n"
+            "                  -H 'Content-Type: application/x-www-form-urlencoded' \\\n"
+            "                  -d 'username=you@example.com&password=yourpassword'"
+        )
+
     logger.info("=" * 60)
     yield
     logger.info("AfriLang API shutting down")
@@ -118,6 +149,7 @@ app.include_router(auth_router,      prefix=PREFIX)
 app.include_router(translate_router, prefix=PREFIX)
 app.include_router(speech_router,    prefix=PREFIX)
 app.include_router(languages_router, prefix=PREFIX)
+app.include_router(debug_router,     prefix=PREFIX)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

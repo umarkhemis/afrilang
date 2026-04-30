@@ -91,82 +91,110 @@ MODEL_REGISTRY: List[ModelEntry] = [
     ModelEntry(
         model_id="sunbird/nllb_translate",
         provider="sunbird",
-        source_langs=["en", "lug", "nyn", "lgg", "ach", "teo", "sw",
-                      "rw", "xog", "myx", "laj", "adh"],
-        target_langs=["en", "lug", "nyn", "lgg", "ach", "teo", "sw",
-                      "rw", "xog", "myx", "laj", "adh"],
+        # Sunbird /tasks/nllb_translate ONLY supports these 6 codes.
+        # For other Ugandan langs (xog, myx, laj, adh, rw) use NLLB fallback.
+        source_langs=["en", "lug", "nyn", "lgg", "ach", "teo"],
+        target_langs=["en", "lug", "nyn", "lgg", "ach", "teo"],
         quality_score=0.92,
         avg_latency_ms=800,
         notes="State-of-art for Ugandan languages; outperforms GPT-4 on 24/31 Ugandan langs",
     ),
 
-    # ── Helsinki-NLP specialised models (via HuggingFace) ───────────────────
+    # ── Helsinki-NLP VERIFIED inference-deployed models ─────────────────────
+    # Only models confirmed callable on router.huggingface.co/hf-inference
+    # Models that show "not deployed by any Inference Provider" are NOT listed
     ModelEntry(
         model_id="Helsinki-NLP/opus-mt-en-sw",
         provider="huggingface",
         source_langs=["en"],
         target_langs=["sw"],
-        quality_score=0.85,
+        quality_score=0.80,
         avg_latency_ms=1200,
+        notes="Verified deployed on HF Inference API",
     ),
     ModelEntry(
         model_id="Helsinki-NLP/opus-mt-sw-en",
         provider="huggingface",
         source_langs=["sw"],
         target_langs=["en"],
-        quality_score=0.83,
+        quality_score=0.78,
+        avg_latency_ms=1200,
+        notes="Verified deployed on HF Inference API",
+    ),
+    ModelEntry(
+        model_id="Helsinki-NLP/opus-mt-yo-en",
+        provider="huggingface",
+        source_langs=["yo"],
+        target_langs=["en"],
+        quality_score=0.72,
+        avg_latency_ms=1300,
+        notes="yo->en confirmed deployed. en->yo not confirmed, falls back to NLLB",
+    ),
+    ModelEntry(
+        model_id="Helsinki-NLP/opus-mt-en-af",
+        provider="huggingface",
+        source_langs=["en"],
+        target_langs=["af"],
+        quality_score=0.80,
         avg_latency_ms=1200,
     ),
     ModelEntry(
-        model_id="Helsinki-NLP/opus-mt-en-yo",
+        model_id="Helsinki-NLP/opus-mt-af-en",
         provider="huggingface",
-        source_langs=["en"],
-        target_langs=["yo"],
+        source_langs=["af"],
+        target_langs=["en"],
         quality_score=0.78,
-        avg_latency_ms=1300,
+        avg_latency_ms=1200,
     ),
     ModelEntry(
-        model_id="Helsinki-NLP/opus-mt-en-ha",
+        model_id="Helsinki-NLP/opus-mt-en-ar",
         provider="huggingface",
         source_langs=["en"],
-        target_langs=["ha"],
+        target_langs=["ar"],
+        quality_score=0.82,
+        avg_latency_ms=1200,
+    ),
+    ModelEntry(
+        model_id="Helsinki-NLP/opus-mt-ar-en",
+        provider="huggingface",
+        source_langs=["ar"],
+        target_langs=["en"],
         quality_score=0.80,
-        avg_latency_ms=1300,
+        avg_latency_ms=1200,
     ),
     ModelEntry(
-        model_id="Helsinki-NLP/opus-mt-en-ig",
+        model_id="Helsinki-NLP/opus-mt-en-fr",
         provider="huggingface",
         source_langs=["en"],
-        target_langs=["ig"],
-        quality_score=0.75,
-        avg_latency_ms=1300,
+        target_langs=["fr"],
+        quality_score=0.84,
+        avg_latency_ms=1100,
     ),
     ModelEntry(
-        model_id="Helsinki-NLP/opus-mt-en-zu",
+        model_id="Helsinki-NLP/opus-mt-fr-en",
         provider="huggingface",
-        source_langs=["en"],
-        target_langs=["zu"],
-        quality_score=0.76,
-        avg_latency_ms=1300,
-    ),
-    ModelEntry(
-        model_id="Helsinki-NLP/opus-mt-en-rw",
-        provider="huggingface",
-        source_langs=["en"],
-        target_langs=["rw"],
-        quality_score=0.77,
-        avg_latency_ms=1300,
+        source_langs=["fr"],
+        target_langs=["en"],
+        quality_score=0.84,
+        avg_latency_ms=1100,
     ),
 
-    # ── NLLB-200 catch-all (lowest priority) ─────────────────────────────────
+    # ── NLLB-200: covers yo, ha, ig, zu, rw, am, so, tw, wo, ff + 190 more ──
+    # Hausa (ha), Igbo (ig), Zulu (zu), Yoruba (en->yo), Kinyarwanda (rw),
+    # Amharic (am), Somali (so), Twi (tw), Wolof (wo), Fula (ff) and more —
+    # Helsinki dedicated models for these either don't exist or are NOT deployed
+    # on the HF Inference API. NLLB-200 handles all of them.
     ModelEntry(
         model_id="facebook/nllb-200-distilled-600M",
         provider="huggingface",
-        source_langs=["*"],   # wildcard – handles any pair
+        source_langs=["*"],
         target_langs=["*"],
-        quality_score=0.60,
+        quality_score=0.65,
         avg_latency_ms=2000,
-        notes="Fallback: covers 200 languages including all African FLORES-200 codes",
+        notes=(
+            "NLLB-200: covers ha, ig, zu, yo, rw, am, so, tw, wo, ff + 190 more. "
+            "Used for all pairs where a verified Helsinki model does not exist."
+        ),
     ),
 ]
 

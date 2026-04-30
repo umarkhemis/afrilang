@@ -511,49 +511,32 @@ class TestLanguages:
 class TestRateLimiting:
 
     def test_rate_limit_eventually_triggers(self, client):
-        """
-        Issue a fresh key with a very low limit and hammer the endpoint.
-        We patch settings so the limit is 2 RPM for this test.
-        """
-        from app.middleware import ratelimit as rl_module
+        import time
+        from app.middleware import ratelimit as rl
+        from app.core.config import settings as cfg
 
-        fresh_key = create_key("rate-limit-test")
+        fresh_key = create_key("rate-limit-test-2")
         headers = {"Authorization": f"Bearer {fresh_key}"}
-        bucket = "rate-limit-test:translate"
+        bucket = "rate-limit-test-2:translate"
 
-        # Clear any existing window
-        if bucket in rl_module._WINDOWS:
-            rl_module._WINDOWS[bucket].clear()
+        # Pre-fill the in-memory window to exactly the limit
+        rl._WINDOWS[bucket].clear()
+        now = time.monotonic()
+        for _ in range(cfg.rate_limit_rpm):
+            rl._WINDOWS[bucket].append(now)
 
-        original_limit = 60
-
-        # Patch limit to 2
-        with patch.object(rl_module, "_sliding_window_check",
-                          wraps=lambda b, limit, window_seconds=60:
-                          rl_module._sliding_window_check.__wrapped__(b, 2, window_seconds)
-                          if False else None):
-            pass  # structural – actual test below
-
-        # Instead: directly fill the window and verify 429
-        from collections import deque
-        import time as _time
-        rl_module._WINDOWS[bucket] = deque([_time.monotonic()] * 2)
-
-        with patch("app.services.routing.route_translation", new_callable=AsyncMock) as mock:
+        with patch("app.api.translate.route_translation", new_callable=AsyncMock) as mock:
             mock.return_value = TranslationResult(
                 translated_text="ok", model_used="m", provider="p",
                 quality_score=0.8, latency_ms=10,
             )
-            with patch("app.core.config.settings") as mock_settings:
-                mock_settings.rate_limit_rpm = 2
-                mock_settings.rate_limit_batch_rpm = 1
-                resp = client.post(
-                    "/api/v1/translate",
-                    json={"text": "Hello", "target_lang": "sw"},
-                    headers=headers,
-                )
-        # Either 200 (window rolled) or 429 – just check it doesn't 500
-        assert resp.status_code in (200, 429)
+            resp = client.post(
+                "/api/v1/translate",
+                json={"text": "Hello", "target_lang": "sw"},
+                headers=headers,
+            )
+        assert resp.status_code == 429
+        assert resp.json()["detail"]["code"] == "RATE_LIMIT_EXCEEDED"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -585,9 +568,17 @@ class TestRegistry:
         assert entry.provider == "sunbird"
 
     def test_nllb_fallback_for_unknown_pair(self):
-        # Twi (tw) has no dedicated model – should fall back to NLLB
-        entry = get_best_model("en", "tw")
+        # ha (Hausa) has no verified Helsinki model — routes to NLLB-200
+        entry = get_best_model("en", "ha")
+        assert entry.provider == "huggingface"
         assert "nllb" in entry.model_id.lower()
+
+    def test_unverified_lang_uses_nllb(self):
+        # ig, zu, rw, am all route through NLLB (no verified HF inference model)
+        for lang in ["ig", "zu", "rw", "am"]:
+            entry = get_best_model("en", lang)
+            assert entry.provider == "huggingface", f"{lang} should be huggingface"
+            assert "nllb" in entry.model_id.lower(), f"{lang} should use NLLB"
 
     def test_model_fast_consistent_with_best(self):
         for src in ["en", "sw", "fr"]:
@@ -652,7 +643,7 @@ class TestSystem:
 class TestSDKDataClasses:
 
     def test_translation_result_str(self):
-        from afrilang_sdk.client import TranslationResult as SDKResult
+        from afrilang import TranslationResult as SDKResult
         r = SDKResult(
             translated_text="Habari",
             detected_source_lang="en",
@@ -666,7 +657,7 @@ class TestSDKDataClasses:
         assert str(r) == "Habari"
 
     def test_batch_item_success_property(self):
-        from afrilang_sdk.client import BatchItemResult as SDKBatch
+        from afrilang import BatchItemResult as SDKBatch
         good = SDKBatch(id="1", translated_text="ok", detected_source_lang="en",
                         target_lang="sw", model_used="m", provider="p",
                         quality_score=0.8, error=None)
@@ -678,7 +669,7 @@ class TestSDKDataClasses:
         assert str(bad) == "[ERROR] fail"
 
     def test_language_repr(self):
-        from afrilang_sdk.client import Language as SDKLang
+        from afrilang import Language as SDKLang
         lang = SDKLang(
             code="sw", name="Swahili", native_name="Kiswahili",
             region="East Africa", family="Niger-Congo",
@@ -693,7 +684,7 @@ class TestSDKDataClasses:
 
     def test_sdk_missing_key_raises(self):
         import os
-        from afrilang_sdk.client import AfriLang, AuthenticationError
+        from afrilang import AfriLang, AuthenticationError
         original = os.environ.pop("AFRILANG_API_KEY", None)
         try:
             with pytest.raises(AuthenticationError):
@@ -703,7 +694,7 @@ class TestSDKDataClasses:
                 os.environ["AFRILANG_API_KEY"] = original
 
     def test_batch_result_iteration(self):
-        from afrilang_sdk.client import BatchResult, BatchItemResult as SDKBatch
+        from afrilang import BatchResult, BatchItemResult as SDKBatch
         items = [
             SDKBatch(id="1", translated_text="Habari", detected_source_lang="en",
                      target_lang="sw", model_used="m", provider="p",
@@ -721,7 +712,7 @@ class TestSDKDataClasses:
         assert ids == ["1", "2"]
 
     def test_translation_result_quality_score(self):
-        from afrilang_sdk.client import TranslationResult as SDKResult
+        from afrilang import TranslationResult as SDKResult
         r = SDKResult(
             translated_text="test", detected_source_lang="en", target_lang="sw",
             model_used="m", provider="p", quality_score=0.92,
